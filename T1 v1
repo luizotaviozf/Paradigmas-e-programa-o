@@ -22,23 +22,52 @@ type Pos = (Int, Int)  -- (row, col), 0-indexed
 
 -- Passo 2: Grid Inicial (exemplo 3x3 para teste; para 10x10, expanda e adicione Black conforme o puzzle)
 rows :: Int
-rows = 3
+rows = 10
 
 cols :: Int
-cols = 3
+cols = 10
 
 initialGrid :: Grid
 initialGrid = [
-  [White Nothing, White Nothing, Black (Just Right)],
-  [White Nothing, Black Nothing, White Nothing],
-  [Black (Just Down), White Nothing, White Nothing]
-  ]  -- Para 10x10, crie uma matriz 10x10 com White Nothing e Black (Just dir) ou Nothing conforme o puzzle real
+  [Black (Just Right), White Nothing, White Nothing, White Nothing, Black (Just Right), White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Left)],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Down), White Nothing, Black Nothing, White Nothing, White Nothing],
+  [Black Nothing, White Nothing, White Nothing, White Nothing, Black (Just Right), White Nothing, Black (Just Left), White Nothing, White Nothing, Black (Just Down)],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Down), White Nothing],
+  [White Nothing, White Nothing, White Nothing, White Nothing, Black Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Right), White Nothing, White Nothing, White Nothing],
+  [White Nothing, Black (Just Down), White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black Nothing, White Nothing, White Nothing, Black (Just Left), White Nothing],
+  [White Nothing, Black Nothing, White Nothing, White Nothing, Black (Just Left), White Nothing, White Nothing, White Nothing, White Nothing, White Nothing],
+  [Black (Just Up), White Nothing, White Nothing, Black (Just Up), White Nothing, White Nothing, Black Nothing, White Nothing, White Nothing, White Nothing]
+  ]
 
 -- Áreas/Regiões hard-coded (baseado no puzzle; substitua com as regiões delimitadas pelas linhas grossas)
 areas :: [[Pos]]
 areas = [
-  [(0,0), (0,1), (1,0), (1,2), (2,1), (2,2)]  -- Exemplo de uma única região para o grid 3x3; para 10x10, liste cada grupo de posições delimitado pelas linhas grossas
-  -- Adicione mais listas para outras regiões, ex.: [(x1,y1), (x2,y2), ...]
+  [(0,1),(0,2),(0,3)],
+  [(0,5),(0,6),(0,7),(1,6)],
+  [(0,8),(1,8),(1,9)],
+  [(1,0),(1,1)],
+  [(1,2)(1,3),(1,4)],
+  [(2,1),(2,2)],
+  [(2,3),(3,2),(3,3),(3,4),(4,3)],
+  [(2,5),(3,5),(4,5),(5,5)],
+  [(2,7),(2,8)],
+  [(3,0),(4,0)],
+  [(3,1),(4,1),(4,2)],
+  [(3,6),(3,7),(4,6)],
+  [(3,9),(4,8),(4,9),(5,8),(5,9)],
+  [(4,7),(5,7),(6,7),(7,7),(6,8)],
+  [(5,0),(6,0),(7,0),(8,0)],
+  [(5,1),(5,2),(6,2),(7,1),(7,2)],
+  [(5,3),(5,4),(6,3)],
+  [(6,4),(6,5),(7,3),(7,4)],
+  [(6,6),(7,6),(8,6)],
+  [(6,9),(7,9),(8,9)],
+  [(),(),(),()],
+  [(),(),()],
+  [(),(),()],
+  [(),()]
   ]
 
 -- Função para obter valor em posição com verificação de limites
