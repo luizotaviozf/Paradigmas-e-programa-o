@@ -117,17 +117,26 @@ checkNoEqualAdj grid pos val = all (\nb -> getValue grid nb /= Just val) (filter
 checkArrows :: Grid -> Bool
 checkArrows grid = all checkOneBlack allBlackPos
   where
-    allBlackPos = [(r,c) | r <- [0..rows-1], c <- [0..cols-1], case grid!!r!!c of Black (Just _) -> True; _ -> False]
-    checkOneBlack pos = case grid !! fst pos !! snd pos of
-      Black (Just dir) -> let nbs = filter (\p -> isValidPos p && isWhite grid p) (orthogonalNeighbors pos)
-                              vals = [n | p <- nbs, Just n <- [getValue grid p]]
-                              maxVal = if null vals then Nothing else Just (maximum vals)
-                              pointedPos = dirToNeighbor dir pos
-                              pointedVal = getValue grid pointedPos in
-                            case (maxVal, pointedVal) of
-                              (Just maxV, Just pv) -> pv == maxV && isValidPos pointedPos && isWhite grid pointedPos
-                              _ -> True  -- Se não há valores, considera válido temporariamente
-      _ -> True  -- Para Black Nothing ou outros, ignora
+    allBlackPos = [(r,c) | r <- [0..rows-1], c <- [0..cols-1],
+                   case grid!!r!!c of Black (Just _) -> True; _ -> False]
+
+    checkOneBlack pos =
+      case grid !! fst pos !! snd pos of
+        Black (Just dir) ->
+          let nbs = filter (\p -> isValidPos p && isWhite grid p) (orthogonalNeighbors pos)
+              vals = [n | p <- nbs, Just n <- [getValue grid p]]
+              pointedPos = dirToNeighbor dir pos
+              pointedVal = getValue grid pointedPos
+          in case pointedVal of
+               Just pv ->
+                 if null vals then True
+                 else
+                   let maxVal = maximum vals
+                       countMax = length (filter (== maxVal) vals)
+                   in pv == maxVal && countMax == 1
+               _ -> True  -- seta sem número ainda: válido por enquanto
+        _ -> True
+
 
 -- Passo 5: Backtracking
 -- Atualiza grid com valor em pos
