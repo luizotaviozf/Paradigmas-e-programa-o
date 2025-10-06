@@ -1,0 +1,196 @@
+-- Módulo principal
+module Main where
+
+import Prelude hiding (Left, Right)
+import Data.List (minimumBy)
+import Data.Ord (comparing)
+import Debug.Trace (trace)
+
+-- Passo 1: Tipos de Dados
+data Direction = Up | Down | Left | Right deriving (Show, Eq)
+
+data Cell = White (Maybe Int) | Black (Maybe Direction) deriving (Eq)
+
+instance Show Cell where
+  show (White Nothing) = "."
+  show (White (Just n)) = show n
+  show (Black Nothing) = "#"
+  show (Black (Just Up)) = "^"
+  show (Black (Just Down)) = "v"
+  show (Black (Just Left)) = "<"
+  show (Black (Just Right)) = ">"
+
+type Grid = [[Cell]]
+type Pos = (Int, Int)  -- (row, col), 0-indexed
+
+-- Passo 2: Grid Inicial (exemplo 3x3 para teste; para 10x10, expanda e adicione Black conforme o puzzle)
+rows :: Int
+rows = 10
+
+cols :: Int
+cols = 10
+
+initialGrid :: Grid
+initialGrid = [
+  [Black (Just Right), White Nothing, White Nothing, White Nothing, Black (Just Right), White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Left)],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Down), White Nothing, Black Nothing, White Nothing, White Nothing],
+  [Black Nothing, White Nothing, White Nothing, White Nothing, Black (Just Right), White Nothing, Black (Just Left), White Nothing, White Nothing, Black (Just Down)],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Down), White Nothing],
+  [White Nothing, White Nothing, White Nothing, White Nothing, Black Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black (Just Right), White Nothing, White Nothing, White Nothing],
+  [White Nothing, Black (Just Down), White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, White Nothing],
+  [White Nothing, White Nothing, White Nothing, White Nothing, White Nothing, Black Nothing, White Nothing, White Nothing, Black (Just Left), White Nothing],
+  [White Nothing, Black Nothing, White Nothing, White Nothing, Black (Just Left), White Nothing, White Nothing, White Nothing, White Nothing, White Nothing],
+  [Black (Just Up), White Nothing, White Nothing, Black (Just Up), White Nothing, White Nothing, Black Nothing, White Nothing, White Nothing, White Nothing]
+  ]
+
+-- Áreas/Regiões hard-coded (baseado no puzzle; substitua com as regiões delimitadas pelas linhas grossas)
+areas :: [[Pos]]
+areas = [
+  [(0,1),(0,2),(0,3)],
+  [(0,5),(0,6),(0,7),(1,6)],
+  [(0,8),(1,8),(1,9)],
+  [(1,0),(1,1)],
+  [(1,2),(1,3),(1,4)],
+  [(2,1),(2,2)],
+  [(2,3),(3,2),(3,3),(3,4),(4,3)],
+  [(2,5),(3,5),(4,5),(5,5)],
+  [(2,7),(2,8)],
+  [(3,0),(4,0)],
+  [(3,1),(4,1),(4,2)],
+  [(3,6),(3,7),(4,6)],
+  [(3,9),(4,8),(4,9),(5,8),(5,9)],
+  [(4,7),(5,7),(6,7),(7,7),(6,8)],
+  [(5,0),(6,0),(7,0),(8,0)],
+  [(5,1),(5,2),(6,2),(7,1),(7,2)],
+  [(5,3),(5,4),(6,3)],
+  [(6,4),(6,5),(7,3),(7,4)],
+  [(6,6),(7,6),(8,6)],
+  [(6,9),(7,9),(8,9)],
+  [(8,2),(8,3),(9,1),(9,2)],
+  [(8,5),(9,4),(9,5)],
+  [(8,7),(8,8),(9,7)],
+  [(9,8),(9,9)]
+  ]
+
+-- Função para obter valor em posição com verificação de limites
+getValue :: Grid -> Pos -> Maybe Int
+getValue grid (r, c)
+  | r < 0 || r >= rows || c < 0 || c >= cols = Nothing  -- Proteção contra índices inválidos
+  | otherwise = case grid !! r !! c of
+      White val -> val
+      _ -> Nothing
+
+-- Verifica se posição é válida
+isValidPos :: Pos -> Bool
+isValidPos (r, c) = r >= 0 && r < rows && c >= 0 && c < cols
+
+-- Verifica se célula é branca
+isWhite :: Grid -> Pos -> Bool
+isWhite grid (r, c)
+  | r < 0 || r >= rows || c < 0 || c >= cols = False
+  | otherwise = case grid !! r !! c of
+      White _ -> True
+      _ -> False
+
+-- Passo 3: Vizinhos Ortogonais
+orthogonalNeighbors :: Pos -> [Pos]
+orthogonalNeighbors (r, c) = filter isValidPos [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
+
+-- Direção para vizinho
+dirToNeighbor :: Direction -> Pos -> Pos
+dirToNeighbor Up (r, c) = (r-1, c)
+dirToNeighbor Down (r, c) = (r+1, c)
+dirToNeighbor Left (r, c) = (r, c-1)
+dirToNeighbor Right (r, c) = (r, c+1)
+
+-- Passo 4: Verificações
+-- Números usados em área
+usedInArea :: Grid -> [Pos] -> [Int]
+usedInArea grid area = [n | p <- area, Just n <- [getValue grid p]]
+
+-- Verifica adjacência igual (para uma posição nova)
+checkNoEqualAdj :: Grid -> Pos -> Int -> Bool
+checkNoEqualAdj grid pos val = all (\nb -> getValue grid nb /= Just val) (filter isValidPos (orthogonalNeighbors pos))
+
+-- Verifica setas global (apenas para Black com Just dir)
+checkArrows :: Grid -> Bool
+checkArrows grid = all checkOneBlack allBlackPos
+  where
+    allBlackPos = [(r,c) | r <- [0..rows-1], c <- [0..cols-1], case grid!!r!!c of Black (Just _) -> True; _ -> False]
+    checkOneBlack pos = case grid !! fst pos !! snd pos of
+      Black (Just dir) -> let nbs = filter (\p -> isValidPos p && isWhite grid p) (orthogonalNeighbors pos)
+                              vals = [n | p <- nbs, Just n <- [getValue grid p]]
+                              maxVal = if null vals then Nothing else Just (maximum vals)
+                              pointedPos = dirToNeighbor dir pos
+                              pointedVal = getValue grid pointedPos in
+                            case (maxVal, pointedVal) of
+                              (Just maxV, Just pv) -> pv == maxV && isValidPos pointedPos && isWhite grid pointedPos
+                              _ -> True  -- Se não há valores, considera válido temporariamente
+      _ -> True  -- Para Black Nothing ou outros, ignora
+
+-- Passo 5: Backtracking
+-- Atualiza grid com valor em pos
+updateGrid :: Grid -> Pos -> Int -> Grid
+updateGrid grid (r, c) val
+  | r < 0 || r >= rows || c < 0 || c >= cols = grid  -- Proteção
+  | otherwise = take r grid ++ [take c (grid !! r) ++ [White (Just val)] ++ drop (c+1) (grid !! r)] ++ drop (r+1) grid
+
+-- Encontra posições vazias brancas
+emptyPositions :: Grid -> [Pos]
+emptyPositions grid = [(r,c) | r <- [0..rows-1], c <- [0..cols-1], isWhite grid (r,c), getValue grid (r,c) == Nothing]
+
+-- Encontra área de uma pos
+findAreaOfPos :: [[Pos]] -> Pos -> [Pos]
+findAreaOfPos areas pos = head [a | a <- areas, pos `elem` a]
+
+-- Calcula valores possíveis para uma posição
+possibleVals :: Grid -> Pos -> [[Pos]] -> [Int]
+possibleVals grid pos areas =
+  let area = findAreaOfPos areas pos
+      n = length area
+      used = usedInArea grid area
+  in [v | v <- [1..n], v `notElem` used, checkNoEqualAdj grid pos v]
+
+-- Escolhe posição com menos possibilidades (MRV)
+choosePos :: Grid -> [Pos] -> [[Pos]] -> Maybe (Pos, [Int])
+choosePos grid positions areas =
+  if null positions then Nothing else
+    let options = [(pos, possibleVals grid pos areas) | pos <- positions]
+    in Just $ minimumBy (comparing (length . snd)) options
+
+-- Solve otimizado
+solve :: Grid -> [Pos] -> [[Pos]] -> Maybe Grid
+solve grid [] areas =
+  if checkArrows grid then Just grid else Nothing
+solve grid positions areas =
+  case choosePos grid positions areas of
+    Nothing -> Nothing
+    Just (pos, vals) ->
+      foldl (\res val -> case res of
+                           Just g -> Just g
+                           Nothing ->
+                             let newGrid = updateGrid grid pos val
+                                 newPositions = filter (/= pos) positions
+                             in if checkArrows newGrid  -- poda antecipada
+                                   then solve newGrid newPositions areas
+                                   else Nothing)
+            Nothing
+            vals
+
+-- Passo 6: Impressão
+printGrid :: Grid -> IO ()
+printGrid grid = mapM_ (putStrLn . unwords . map show) grid
+
+-- Main
+main :: IO ()
+main = do
+  putStrLn "Áreas definidas:"
+  print areas  -- Depuração
+  case solve initialGrid (emptyPositions initialGrid) areas of
+    Just sol -> do
+      putStrLn "Solução encontrada:"
+      printGrid sol
+    Nothing -> putStrLn "Sem solução. Verifique o initialGrid ou as regras."
+
+-- Para 10x10: Defina rows=10, cols=10, initialGrid com 10 linhas de 10 células, e areas com as regiões delimitadas pelas linhas grossas do puzzle específico (ex.: consulte o puzzle em https://www.janko.at/Raetsel/Makaro/index.htm e liste as posições de cada grupo).
