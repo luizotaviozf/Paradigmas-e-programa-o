@@ -20,7 +20,7 @@ instance Show Cell where
 type Grid = [[Cell]]
 type Pos = (Int, Int)  -- (row, col), 0-indexed
 
--- Passo 2: Grid Inicial (exemplo 3x3 com Black Nothing para teste)
+-- Passo 2: Grid Inicial (exemplo 3x3 para teste; para 10x10, expanda e adicione Black conforme o puzzle)
 rows :: Int
 rows = 3
 
@@ -32,7 +32,14 @@ initialGrid = [
   [White Nothing, White Nothing, Black (Just Right)],
   [White Nothing, Black Nothing, White Nothing],
   [Black (Just Down), White Nothing, White Nothing]
-  ]  -- Grid 3x3 confirmado
+  ]  -- Para 10x10, crie uma matriz 10x10 com White Nothing e Black (Just dir) ou Nothing conforme o puzzle real
+
+-- Áreas/Regiões hard-coded (baseado no puzzle; substitua com as regiões delimitadas pelas linhas grossas)
+areas :: [[Pos]]
+areas = [
+  [(0,0), (0,1), (1,0), (1,2), (2,1), (2,2)]  -- Exemplo de uma única região para o grid 3x3; para 10x10, liste cada grupo de posições delimitado pelas linhas grossas
+  -- Adicione mais listas para outras regiões, ex.: [(x1,y1), (x2,y2), ...]
+  ]
 
 -- Função para obter valor em posição com verificação de limites
 getValue :: Grid -> Pos -> Maybe Int
@@ -58,27 +65,12 @@ isWhite grid (r, c)
 orthogonalNeighbors :: Pos -> [Pos]
 orthogonalNeighbors (r, c) = filter isValidPos [(r-1, c), (r+1, c), (r, c-1), (r, c+1)]
 
--- Direção para vizinho (lambda para mapear)
+-- Direção para vizinho
 dirToNeighbor :: Direction -> Pos -> Pos
 dirToNeighbor Up (r, c) = (r-1, c)
 dirToNeighbor Down (r, c) = (r+1, c)
 dirToNeighbor Left (r, c) = (r, c-1)
 dirToNeighbor Right (r, c) = (r, c+1)
-
--- Encontrar áreas: DFS para componentes conectados
-findAreas :: Grid -> [[Pos]]
-findAreas grid = snd $ foldl (\(vis, areas) pos ->
-  if pos `elem` vis || not (isWhite grid pos)
-  then (vis, areas)
-  else let area = dfs grid pos [] in (vis ++ area, area : areas))
-  ([], []) allPos
-  where
-    allPos = [(r, c) | r <- [0..rows-1], c <- [0..cols-1]]
-    dfs :: Grid -> Pos -> [Pos] -> [Pos]
-    dfs grid p visited = if p `elem` visited || not (isWhite grid p)
-                         then visited
-                         else let newVisited = p : visited
-                              in foldl (\acc nb -> dfs grid nb acc) newVisited (orthogonalNeighbors p)
 
 -- Passo 4: Verificações
 -- Números usados em área
@@ -141,8 +133,7 @@ printGrid grid = mapM_ (putStrLn . unwords . map show) grid
 -- Main
 main :: IO ()
 main = do
-  let areas = findAreas initialGrid
-  putStrLn "Áreas encontradas:"
+  putStrLn "Áreas definidas:"
   print areas  -- Depuração
   case solve initialGrid (emptyPositions initialGrid) areas of
     Just sol -> do
@@ -150,5 +141,4 @@ main = do
       printGrid sol
     Nothing -> putStrLn "Sem solução. Verifique o initialGrid ou as regras."
 
--- Para 10x10: Defina rows=10, cols=10, e initialGrid com 10 linhas, ex:
--- initialGrid = replicate 10 (replicate 10 (White Nothing)) -- mas adicione Blacks com Just dir ou Nothing conforme puzzle real.
+-- Para 10x10: Defina rows=10, cols=10, initialGrid com 10 linhas de 10 células, e areas com as regiões delimitadas pelas linhas grossas do puzzle específico (ex.: consulte o puzzle em https://www.janko.at/Raetsel/Makaro/index.htm e liste as posições de cada grupo).
