@@ -23,7 +23,7 @@ instance Show Cell where
 type Grid = [[Cell]]
 type Pos = (Int, Int)  -- (row, col), 0-indexed
 
--- Passo 2: Grid Inicial (exemplo 3x3 para teste; para 10x10, expanda e adicione Black conforme o puzzle)
+-- Passo 2: Grid Inicial (exemplo 10x10 para teste)
 rows :: Int
 rows = 10
 
@@ -201,5 +201,3 @@ main = do
       putStrLn "Solução encontrada:"
       printGrid sol
     Nothing -> putStrLn "Sem solução. Verifique o initialGrid ou as regras."
-
--- Para 10x10: Defina rows=10, cols=10, initialGrid com 10 linhas de 10 células, e areas com as regiões delimitadas pelas linhas grossas do puzzle específico (ex.: consulte o puzzle em https://www.janko.at/Raetsel/Makaro/index.htm e liste as posições de cada grupo).
