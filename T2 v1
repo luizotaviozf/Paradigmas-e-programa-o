@@ -1,0 +1,173 @@
+; Resolvedor para o puzzle Wolkenkratzer (Skyscrapers) usando backtracking com heurística MRV (Minimum Remaining Values)
+; Capaz de resolver puzzles até 6x6.
+; O puzzle é modelado como um problema de satisfação de restrições (CSP).
+; As restrições incluem unicidade em linhas e colunas (como quadrado latino) e restrições de visibilidade.
+; A entrada é hardcoded nas variáveis *n*, *left*, *right*, *top*, *bottom*. Use nil para pistas ausentes.
+; Exemplo de 6x6 extraído de um puzzle real.
+
+(defparameter *n* 6)  ; Tamanho do grid
+
+(defvar *grid* nil)    ; Grid N x N, inicializado com 0 (vazio)
+(defvar *domains* nil) ; Domínios: array N x N de listas de valores possíveis
+
+; Pistas: listas de tamanho N, nil se sem pista
+(defvar *left* '(4 3 3 3 1 2))
+(defvar *right* '(2 2 2 1 2 2))
+(defvar *top* '(3 3 1 2 1 3))
+(defvar *bottom* '(2 1 4 3 5 3))
+
+; Inicializa grid e domínios
+(defun init-grid-and-domains ()
+  (setf *grid* (make-array (list *n* *n*) :initial-element 0))
+  (setf *domains* (make-array (list *n* *n*)))
+  (let ((all-values (loop for i from 1 to *n* collect i)))
+    (loop for i below *n* do
+          (loop for j below *n* do
+                (setf (aref *domains* i j) (copy-list all-values))))))
+
+; Verifica se célula está atribuída
+(defun assigned-p (row col)
+  (/= (aref *grid* row col) 0))
+
+; Verifica se todas células estão atribuídas
+(defun all-assigned-p ()
+  (loop for i below *n* always
+        (loop for j below *n* always (assigned-p i j))))
+
+; Seleciona a variável (célula) com MRV (menor domínio), desempate por menor row/col
+(defun select-var ()
+  (let ((min-size most-positive-fixnum)
+        (best nil))
+    (loop for i below *n* do
+          (loop for j below *n* do
+                (when (not (assigned-p i j))
+                  (let ((size (length (aref *domains* i j))))
+                    (when (or (< size min-size)
+                              (and (= size min-size)
+                                   (or (< i (car best))
+                                       (and (= i (car best)) (< j (cdr best))))))
+                      (setf min-size size
+                            best (cons i j)))))))
+    best))
+
+; Obtém os valores de uma linha
+(defun get-row (row)
+  (loop for j below *n* collect (aref *grid* row j)))
+
+; Obtém os valores de uma coluna
+(defun get-col (col)
+  (loop for i below *n* collect (aref *grid* i col)))
+
+; Calcula o número de arranha-céus visíveis em uma lista de alturas
+; from-start: t para da esquerda/topo, nil para da direita/baixo (reverte a lista)
+(defun visible-count (heights from-start)
+  (let ((dir-heights (if from-start heights (reverse heights)))
+        (count 0)
+        (max-h -1))
+    (dolist (h dir-heights)
+      (when (> h max-h)
+        (incf count)
+        (setf max-h h)))
+    count))
+
+; Verifica visibilidade para uma linha completa
+(defun check-row-visibility (row)
+  (let ((heights (get-row row))
+        (left-clue (nth row *left*))
+        (right-clue (nth row *right*)))
+    (and (or (null left-clue) (= (visible-count heights t) left-clue))
+         (or (null right-clue) (= (visible-count heights nil) right-clue)))))
+
+; Verifica visibilidade para uma coluna completa
+(defun check-col-visibility (col)
+  (let ((heights (get-col col))
+        (top-clue (nth col *top*))
+        (bottom-clue (nth col *bottom*)))
+    (and (or (null top-clue) (= (visible-count heights t) top-clue))
+         (or (null bottom-clue) (= (visible-count heights nil) bottom-clue)))))
+
+; Verifica se linha está completa
+(defun row-full-p (row)
+  (loop for j below *n* always (assigned-p row j)))
+
+; Verifica se coluna está completa
+(defun col-full-p (col)
+  (loop for i below *n* always (assigned-p i col)))
+
+; Tenta atribuir valor e faz forward checking
+; Retorna lista de removidos se sucesso, nil se falha
+(defun try-assign (row col val)
+  (setf (aref *grid* row col) val)
+  (let ((removed nil))
+    ; Remover val da linha
+    (loop for j below *n*
+          when (and (/= j col) (not (assigned-p row j)))
+          do (let ((dom (aref *domains* row j)))
+               (when (member val dom)
+                 (push (list row j val) removed)
+                 (setf (aref *domains* row j) (remove val dom))
+                 (when (null (aref *domains* row j))
+                   (undo-assign row col removed)
+                   (return-from try-assign nil)))))
+    ; Remover val da coluna
+    (loop for i below *n*
+          when (and (/= i row) (not (assigned-p i col)))
+          do (let ((dom (aref *domains* i col)))
+               (when (member val dom)
+                 (push (list i col val) removed)
+                 (setf (aref *domains* i col) (remove val dom))
+                 (when (null (aref *domains* i col))
+                   (undo-assign row col removed)
+                   (return-from try-assign nil)))))
+    ; Verificar visibilidade se linha/coluna completa
+    (let ((row-full (row-full-p row))
+          (col-full (col-full-p col)))
+      (when (and row-full (not (check-row-visibility row)))
+        (undo-assign row col removed)
+        (return-from try-assign nil))
+      (when (and col-full (not (check-col-visibility col)))
+        (undo-assign row col removed)
+        (return-from try-assign nil)))
+    removed))
+
+; Desfaz atribuição e restaura domínios
+(defun undo-assign (row col removed)
+  (setf (aref *grid* row col) 0)
+  (dolist (rem removed)
+    (destructuring-bind (i j v) rem
+      (push v (aref *domains* i j)))))
+
+; Função de backtracking
+(defun backtrack ()
+  (if (all-assigned-p)
+      t  ; Solução encontrada
+      (let ((pos (select-var)))
+        (if (null pos)
+            nil
+            (destructuring-bind (row . col) pos
+              (dolist (val (aref *domains* row col))
+                (let ((removed (try-assign row col val)))
+                  (when removed
+                    (when (backtrack)
+                      (return t))
+                    (undo-assign row col removed))))
+              nil)))))  ; Falha
+
+; Imprime o grid
+(defun print-grid ()
+  (loop for i below *n* do
+        (loop for j below *n* do
+              (format t "~2d " (aref *grid* i j)))
+        (terpri)))
+
+; Para executar: inicialize e chame solve
+(defun solve ()
+  (init-grid-and-domains)
+  (if (backtrack)
+      (progn
+        (format t "Solução encontrada:~%")
+        (print-grid))
+      (format t "Nenhuma solução encontrada.~%")))
+
+; Executa automaticamente ao carregar o arquivo
+(solve)
