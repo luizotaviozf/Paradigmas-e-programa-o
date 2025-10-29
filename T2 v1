@@ -1,173 +1,160 @@
-; Resolvedor para o puzzle Wolkenkratzer (Skyscrapers) usando backtracking com heurística MRV (Minimum Remaining Values)
-; Capaz de resolver puzzles até 6x6.
-; O puzzle é modelado como um problema de satisfação de restrições (CSP).
-; As restrições incluem unicidade em linhas e colunas (como quadrado latino) e restrições de visibilidade.
-; A entrada é hardcoded nas variáveis *n*, *left*, *right*, *top*, *bottom*. Use nil para pistas ausentes.
-; Exemplo de 6x6 extraído de um puzzle real.
+(defstruct cell
+  type   ;; :white ou :black
+  value) ;; :white → valor preenchido ou nil; :black → valor da soma
 
-(defparameter *n* 6)  ; Tamanho do grid
+(defparameter *puzzle*
+  '((0 11 9 0 14 0 0 0)
+    (0 0 0 17 0 0 18 12)
+    (0 17 18 0 0 14 0 0)
+    (12 0 16 0 16 0 0 0)
+    (0 0 0 15 0 16 0 9)
+    (12 0 0 0 10 0 18 0)
+    (0 20 0 20 0 16 0 0)
+    (6 0 0 0 0 0 11 9)))
 
-(defvar *grid* nil)    ; Grid N x N, inicializado com 0 (vazio)
-(defvar *domains* nil) ; Domínios: array N x N de listas de valores possíveis
+(defparameter *rows* (length *puzzle*))
+(defparameter *cols* (length (first *puzzle*)))
 
-; Pistas: listas de tamanho N, nil se sem pista
-(defvar *left* '(4 3 3 3 1 2))
-(defvar *right* '(2 2 2 1 2 2))
-(defvar *top* '(3 3 1 2 1 3))
-(defvar *bottom* '(2 1 4 3 5 3))
+(defun make-grid (matrix)
+  (loop for r from 0 below *rows*
+        collect
+        (loop for c from 0 below *cols*
+              collect
+              (let ((val (nth c (nth r matrix))))
+                (if (= val 0)
+                    (make-cell :type :white :value nil)
+                    (make-cell :type :black :value val)))))
+  )
+(defparameter *initial-grid* (make-grid *puzzle*))
 
-; Inicializa grid e domínios
-(defun init-grid-and-domains ()
-  (setf *grid* (make-array (list *n* *n*) :initial-element 0))
-  (setf *domains* (make-array (list *n* *n*)))
-  (let ((all-values (loop for i from 1 to *n* collect i)))
-    (loop for i below *n* do
-          (loop for j below *n* do
-                (setf (aref *domains* i j) (copy-list all-values))))))
+(defun get-cell (grid row col)
+  (and (>= row 0) (< row *rows*) (>= col 0) (< col *cols*)
+       (nth col (nth row grid))))
 
-; Verifica se célula está atribuída
-(defun assigned-p (row col)
-  (/= (aref *grid* row col) 0))
+(defun set-cell (grid row col new-cell)
+  (let ((new-row (copy-list (nth row grid))))
+    (setf (nth col new-row) new-cell)
+    (append (subseq grid 0 row)
+            (list new-row)
+            (subseq grid (1+ row)))))
 
-; Verifica se todas células estão atribuídas
-(defun all-assigned-p ()
-  (loop for i below *n* always
-        (loop for j below *n* always (assigned-p i j))))
+(defun is-white? (cell) (eq (cell-type cell) :white))
+(defun is-black? (cell) (eq (cell-type cell) :black))
 
-; Seleciona a variável (célula) com MRV (menor domínio), desempate por menor row/col
-(defun select-var ()
+(defun row-white-cells (grid row)
+  (remove-if-not #'is-white? (nth row grid)))
+
+(defun col-white-cells (grid col)
+  (remove-if-not #'is-white? (mapcar (lambda (row) (nth col row)) grid)))
+
+(defun neighbors-8 (row col)
+  (remove-if-not
+   (lambda (pos)
+     (let ((r (first pos)) (c (second pos)))
+       (and (>= r 0) (< r *rows*) (>= c 0) (< c *cols*))))
+   (list
+    (list (1- row) (1- col)) (list (1- row) col) (list (1- row) (1+ col))
+    (list row (1- col))       (list row (1+ col))
+    (list (1+ row) (1- col)) (list (1+ row) col) (list (1+ row) (1+ col)))))
+
+(defun check-row-col (grid row col val)
+  (and (not (member val (mapcar #'cell-value (row-white-cells grid row))))
+       (not (member val (mapcar #'cell-value (col-white-cells grid col))))))
+
+(defun check-black-sum (grid row col)
+  (let ((cell (get-cell grid row col)))
+    (if (is-black? cell)
+        (let* ((neighbors (neighbors-8 row col))
+               (white-neigh (remove-if-not (lambda (pos) (is-white? (get-cell grid (first pos) (second pos)))) neighbors))
+               (values (mapcar (lambda (pos) (cell-value (get-cell grid (first pos) (second pos)))) white-neigh)))
+          (if (member nil values)
+              t
+              (= (reduce #'+ values) (cell-value cell))))
+        t)))
+
+(defun check-black-sum-partial (grid row col)
+  (let ((cell (get-cell grid row col)))
+    (if (is-black? cell)
+        (let* ((neighbors (neighbors-8 row col))
+               (white-neigh (remove-if-not (lambda (pos) (is-white? (get-cell grid (first pos) (second pos)))) neighbors))
+               (values (mapcar (lambda (pos) (cell-value (get-cell grid (first pos) (second pos)))) white-neigh))
+               (filled (remove nil values))
+               (sum-filled (reduce #'+ filled :initial-value 0))
+               (empty-count (- (length white-neigh) (length filled)))
+               (max-val (max (length (row-white-cells grid row))
+                             (length (col-white-cells grid col))))
+               (min-val 1)
+               (max-possible-sum (+ sum-filled (* empty-count max-val)))
+               (min-possible-sum (+ sum-filled (* empty-count min-val))))
+          (and (<= sum-filled (cell-value cell))
+               (>= max-possible-sum (cell-value cell))
+               (<= min-possible-sum (cell-value cell))))
+        t)))
+
+(defun all-black-ok? (grid)
+  (loop for r from 0 below *rows*
+        always (loop for c from 0 below *cols*
+                     always (check-black-sum grid r c))))
+
+(defun empty-positions (grid)
+  (loop for r from 0 below *rows*
+        append
+        (loop for c from 0 below *cols*
+              when (and (is-white? (get-cell grid r c))
+                        (null (cell-value (get-cell grid r c))))
+              collect (list r c))))
+
+(defun possible-values (grid row col)
+  (let ((n (max (length (row-white-cells grid row))
+                (length (col-white-cells grid col)))))
+    (remove-if-not (lambda (v) (check-row-col grid row col v))
+                   (loop for i from 1 to n collect i))))
+
+(defun choose-mrv (grid empties)
   (let ((min-size most-positive-fixnum)
         (best nil))
-    (loop for i below *n* do
-          (loop for j below *n* do
-                (when (not (assigned-p i j))
-                  (let ((size (length (aref *domains* i j))))
-                    (when (or (< size min-size)
-                              (and (= size min-size)
-                                   (or (< i (car best))
-                                       (and (= i (car best)) (< j (cdr best))))))
-                      (setf min-size size
-                            best (cons i j)))))))
+    (dolist (pos empties)
+      (let* ((vals (possible-values grid (first pos) (second pos)))
+             (size (length vals)))
+        (when (< size min-size)
+          (setf min-size size
+                best (cons pos vals)))))
     best))
 
-; Obtém os valores de uma linha
-(defun get-row (row)
-  (loop for j below *n* collect (aref *grid* row j)))
+(defun check-affected-blacks (grid row col)
+  (let ((black-neighs (remove-if-not (lambda (pos) (is-black? (get-cell grid (first pos) (second pos))))
+                                     (neighbors-8 row col))))
+    (every (lambda (pos) (check-black-sum-partial grid (first pos) (second pos)))
+           black-neighs)))
 
-; Obtém os valores de uma coluna
-(defun get-col (col)
-  (loop for i below *n* collect (aref *grid* i col)))
+(defun solve (grid)
+  (let ((empties (empty-positions grid)))
+    (if (null empties)
+        (if (all-black-ok? grid)
+            grid
+            nil)
+        (let* ((choice (choose-mrv grid empties))
+               (pos (car choice))
+               (vals (cdr choice))
+               (r (first pos))
+               (c (second pos)))
+          (loop for val in vals
+                thereis
+                (let ((new-grid (set-cell grid r c (make-cell :type :white :value val))))
+                  (when (check-affected-blacks new-grid r c)
+                    (solve new-grid))))))))
 
-; Calcula o número de arranha-céus visíveis em uma lista de alturas
-; from-start: t para da esquerda/topo, nil para da direita/baixo (reverte a lista)
-(defun visible-count (heights from-start)
-  (let ((dir-heights (if from-start heights (reverse heights)))
-        (count 0)
-        (max-h -1))
-    (dolist (h dir-heights)
-      (when (> h max-h)
-        (incf count)
-        (setf max-h h)))
-    count))
+(defun print-grid (grid)
+  (dolist (row grid)
+    (dolist (cell row)
+      (format t "~a " (cond
+                        ((is-white? cell) (or (cell-value cell) ?.))
+                        ((is-black? cell) (cell-value cell)))))
+    (terpri)))
 
-; Verifica visibilidade para uma linha completa
-(defun check-row-visibility (row)
-  (let ((heights (get-row row))
-        (left-clue (nth row *left*))
-        (right-clue (nth row *right*)))
-    (and (or (null left-clue) (= (visible-count heights t) left-clue))
-         (or (null right-clue) (= (visible-count heights nil) right-clue)))))
-
-; Verifica visibilidade para uma coluna completa
-(defun check-col-visibility (col)
-  (let ((heights (get-col col))
-        (top-clue (nth col *top*))
-        (bottom-clue (nth col *bottom*)))
-    (and (or (null top-clue) (= (visible-count heights t) top-clue))
-         (or (null bottom-clue) (= (visible-count heights nil) bottom-clue)))))
-
-; Verifica se linha está completa
-(defun row-full-p (row)
-  (loop for j below *n* always (assigned-p row j)))
-
-; Verifica se coluna está completa
-(defun col-full-p (col)
-  (loop for i below *n* always (assigned-p i col)))
-
-; Tenta atribuir valor e faz forward checking
-; Retorna lista de removidos se sucesso, nil se falha
-(defun try-assign (row col val)
-  (setf (aref *grid* row col) val)
-  (let ((removed nil))
-    ; Remover val da linha
-    (loop for j below *n*
-          when (and (/= j col) (not (assigned-p row j)))
-          do (let ((dom (aref *domains* row j)))
-               (when (member val dom)
-                 (push (list row j val) removed)
-                 (setf (aref *domains* row j) (remove val dom))
-                 (when (null (aref *domains* row j))
-                   (undo-assign row col removed)
-                   (return-from try-assign nil)))))
-    ; Remover val da coluna
-    (loop for i below *n*
-          when (and (/= i row) (not (assigned-p i col)))
-          do (let ((dom (aref *domains* i col)))
-               (when (member val dom)
-                 (push (list i col val) removed)
-                 (setf (aref *domains* i col) (remove val dom))
-                 (when (null (aref *domains* i col))
-                   (undo-assign row col removed)
-                   (return-from try-assign nil)))))
-    ; Verificar visibilidade se linha/coluna completa
-    (let ((row-full (row-full-p row))
-          (col-full (col-full-p col)))
-      (when (and row-full (not (check-row-visibility row)))
-        (undo-assign row col removed)
-        (return-from try-assign nil))
-      (when (and col-full (not (check-col-visibility col)))
-        (undo-assign row col removed)
-        (return-from try-assign nil)))
-    removed))
-
-; Desfaz atribuição e restaura domínios
-(defun undo-assign (row col removed)
-  (setf (aref *grid* row col) 0)
-  (dolist (rem removed)
-    (destructuring-bind (i j v) rem
-      (push v (aref *domains* i j)))))
-
-; Função de backtracking
-(defun backtrack ()
-  (if (all-assigned-p)
-      t  ; Solução encontrada
-      (let ((pos (select-var)))
-        (if (null pos)
-            nil
-            (destructuring-bind (row . col) pos
-              (dolist (val (aref *domains* row col))
-                (let ((removed (try-assign row col val)))
-                  (when removed
-                    (when (backtrack)
-                      (return t))
-                    (undo-assign row col removed))))
-              nil)))))  ; Falha
-
-; Imprime o grid
-(defun print-grid ()
-  (loop for i below *n* do
-        (loop for j below *n* do
-              (format t "~2d " (aref *grid* i j)))
-        (terpri)))
-
-; Para executar: inicialize e chame solve
-(defun solve ()
-  (init-grid-and-domains)
-  (if (backtrack)
+(let ((solution (solve *initial-grid*)))
+  (if solution
       (progn
         (format t "Solução encontrada:~%")
-        (print-grid))
-      (format t "Nenhuma solução encontrada.~%")))
-
-; Executa automaticamente ao carregar o arquivo
-(solve)
+        (print-grid solution))
+      (format t "Sem solução.")))
