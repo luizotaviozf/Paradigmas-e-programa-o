@@ -1,0 +1,212 @@
+(defstruct cell
+  type
+  value)
+
+;;; Tabuleiro inicial (0 = célula branca vazia)
+(defparameter *puzzle*
+  '((0 11 9 0 14 0 0 0)
+    (0 0 0 17 0 0 18 12)
+    (0 17 18 0 0 14 0 0)
+    (12 0 16 0 16 0 0 0)
+    (0 0 0 15 0 16 0 9)
+    (12 0 0 0 10 0 18 0)
+    (0 20 0 20 0 16 0 0)
+    (6 0 0 0 0 0 11 9)))
+
+;;; Dimensões da matriz
+(defparameter *rows* (length *puzzle*))
+(defparameter *cols* (length (first *puzzle*)))
+
+;;; Constrói a grade de células (convertendo números em objetos cell)
+(defun make-grid (matrix)
+  (loop for r from 0 below *rows*
+        collect
+        (loop for c from 0 below *cols*
+              collect
+              (let ((val (nth c (nth r matrix))))
+                (if (= val 0)
+                    (make-cell :type :white :value nil)
+                    (make-cell :type :black :value val))))))
+
+(defparameter *initial-grid* (make-grid *puzzle*))
+
+
+;;; Funções utilitárias para acessar e modificar a grade
+(defun get-cell (grid row col)
+  "Retorna a célula (row,col) ou NIL se estiver fora dos limites."
+  (and (>= row 0) (< row *rows*)
+       (>= col 0) (< col *cols*)
+       (nth col (nth row grid))))
+
+(defun set-cell (grid row col new-cell)
+  "Retorna uma nova grade com a célula (row,col) atualizada."
+  (let ((new-row (copy-list (nth row grid))))
+    (setf (nth col new-row) new-cell)
+    (append (subseq grid 0 row)
+            (list new-row)
+            (subseq grid (1+ row)))))
+
+(defun is-white? (cell) (eq (cell-type cell) :white))
+(defun is-black? (cell) (eq (cell-type cell) :black))
+
+
+;;; Obtém as células brancas de uma linha ou coluna
+(defun row-white-cells (grid row)
+  (remove-if-not #'is-white? (nth row grid)))
+
+(defun col-white-cells (grid col)
+  (remove-if-not #'is-white?
+                 (mapcar (lambda (row) (nth col row)) grid)))
+
+
+;;; Retorna as coordenadas das 8 células vizinhas (em cruz e diagonais)
+(defun neighbors-8 (row col)
+  (remove-if-not
+   (lambda (pos)
+     (let ((r (first pos)) (c (second pos)))
+       (and (>= r 0) (< r *rows*) (>= c 0) (< c *cols*))))
+   (list
+    (list (1- row) (1- col)) (list (1- row) col) (list (1- row) (1+ col))
+    (list row (1- col))       (list row (1+ col))
+    (list (1+ row) (1- col)) (list (1+ row) col) (list (1+ row) (1+ col)))))
+
+;;; Verifica se um valor pode ser colocado sem repetir na linha e coluna
+(defun check-row-col (grid row col val)
+  (and (not (member val (mapcar #'cell-value (row-white-cells grid row))))
+       (not (member val (mapcar #'cell-value (col-white-cells grid col))))))
+
+
+;;; Verifica se uma célula preta já tem soma correta (completa)
+(defun check-black-sum (grid row col)
+  (let ((cell (get-cell grid row col)))
+    (if (is-black? cell)
+        (let* ((neighbors (neighbors-8 row col))
+               (white-neigh (remove-if-not
+                             (lambda (pos)
+                               (is-white? (get-cell grid (first pos) (second pos))))
+                             neighbors))
+               (values (mapcar
+                        (lambda (pos)
+                          (cell-value (get-cell grid (first pos) (second pos))))
+                        white-neigh)))
+          (if (member nil values)
+              t
+              (= (reduce #'+ values) (cell-value cell))))
+        t)))
+
+
+;;; Verificação parcial: permite poda antes de preencher tudo
+(defun check-black-sum-partial (grid row col)
+  "Verifica se a soma ainda pode ser atingida com os valores atuais."
+  (let ((cell (get-cell grid row col)))
+    (if (is-black? cell)
+        (let* ((neighbors (neighbors-8 row col))
+               (white-neigh (remove-if-not
+                             (lambda (pos)
+                               (is-white? (get-cell grid (first pos) (second pos))))
+                             neighbors))
+               (values (mapcar
+                        (lambda (pos)
+                          (cell-value (get-cell grid (first pos) (second pos))))
+                        white-neigh))
+               (filled (remove nil values))
+               (sum-filled (reduce #'+ filled :initial-value 0))
+               (empty-count (- (length white-neigh) (length filled)))
+               (max-val (max (length (row-white-cells grid row))
+                             (length (col-white-cells grid col))))
+               (min-val 1)
+               (max-possible-sum (+ sum-filled (* empty-count max-val)))
+               (min-possible-sum (+ sum-filled (* empty-count min-val))))
+          (and (<= sum-filled (cell-value cell))
+               (>= max-possible-sum (cell-value cell))
+               (<= min-possible-sum (cell-value cell))))
+        t)))
+
+
+;;; Verifica se todas as células pretas batem com suas somas
+(defun all-black-ok? (grid)
+  (loop for r from 0 below *rows*
+        always (loop for c from 0 below *cols*
+                     always (check-black-sum grid r c))))
+
+
+;;; Lista todas as posições vazias do tabuleiro
+(defun empty-positions (grid)
+  (loop for r from 0 below *rows*
+        append
+        (loop for c from 0 below *cols*
+              when (and (is-white? (get-cell grid r c))
+                        (null (cell-value (get-cell grid r c))))
+              collect (list r c))))
+
+
+;;; Retorna os valores possíveis para uma célula específica
+(defun possible-values (grid row col)
+  (let ((n (max (length (row-white-cells grid row))
+                (length (col-white-cells grid col)))))
+    (remove-if-not (lambda (v) (check-row-col grid row col v))
+                   (loop for i from 1 to n collect i))))
+
+
+;;; Escolhe célula com menos opções (heurística MRV)
+(defun choose-mrv (grid empties)
+  (let ((min-size most-positive-fixnum)
+        (best nil))
+    (dolist (pos empties)
+      (let* ((vals (possible-values grid (first pos) (second pos)))
+             (size (length vals)))
+        (when (< size min-size)
+          (setf min-size size
+                best (cons pos vals)))))
+    best))
+
+
+;;; Verifica se as células pretas vizinhas ainda são válidas
+(defun check-affected-blacks (grid row col)
+  (let ((black-neighs (remove-if-not
+                       (lambda (pos)
+                         (is-black? (get-cell grid (first pos) (second pos))))
+                       (neighbors-8 row col))))
+    (every (lambda (pos)
+             (check-black-sum-partial grid (first pos) (second pos)))
+           black-neighs)))
+
+
+;;; Função recursiva principal (backtracking com poda)
+(defun solve (grid)
+  (let ((empties (empty-positions grid)))
+    (if (null empties)
+        (if (all-black-ok? grid)
+            grid
+            nil)
+        (let* ((choice (choose-mrv grid empties))
+               (pos (car choice))
+               (vals (cdr choice))
+               (r (first pos))
+               (c (second pos)))
+          (loop for val in vals
+                thereis
+                (let ((new-grid (set-cell grid r c
+                                          (make-cell :type :white :value val))))
+                  (when (check-affected-blacks new-grid r c)
+                    (solve new-grid))))))))
+
+
+;;; Impressão da grade no terminal
+(defun print-grid (grid)
+  (dolist (row grid)
+    (dolist (cell row)
+      (format t "~a "
+              (cond
+                ((is-white? cell) (or (cell-value cell) ?.))
+                ((is-black? cell) (cell-value cell)))))
+    (terpri)))
+
+
+;;; Execução principal
+(let ((solution (solve *initial-grid*)))
+  (if solution
+      (progn
+        (format t "Solução encontrada:~%")
+        (print-grid solution))
+      (format t "Sem solução.")))
