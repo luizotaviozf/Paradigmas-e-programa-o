@@ -27,7 +27,7 @@ visible_check_right(Row, Clue) :-
     Count =:= Clue.
 
 % -------------------------
-% Estrutura de linha: agora com assinatura row_structure(Max, Row)
+% Estrutura de linha: com assinatura row_structure(Max, Row)
 % Cada linha tem comprimento Max+1, domínio 0..Max, todos distintos e exatamente 1 zero
 % -------------------------
 row_structure(Max, Row) :-
@@ -75,7 +75,7 @@ solve(Grid) :-
     length(Grid, N),
     maplist(same_length(Grid), Grid),
 
-    % domínio e linhas estruturadas (agora row_structure/2 com ordem correta)
+    % domínio e linhas estruturadas (row_structure/2 com ordem correta)
     maplist(row_structure(Max), Grid),
 
     % colunas todas distintas (cada número 0..Max aparece exatamente uma vez por coluna)
