@@ -1,0 +1,138 @@
+:- use_module(library(clpfd)).
+:- use_module(library(lists)).
+
+% -------------------------
+% Conta prédios visíveis (sem CLPFD)
+% -------------------------
+count_visible_plain(Row, Count) :-
+    count_visible_plain(Row, 0, 0, Count).
+
+count_visible_plain([], _Max, Count, Count).
+count_visible_plain([0|T], Max, C0, C) :-
+    count_visible_plain(T, Max, C0, C).
+count_visible_plain([H|T], Max, C0, C) :-
+    H > Max, !,
+    C1 is C0 + 1,
+    count_visible_plain(T, H, C1, C).
+count_visible_plain([_H|T], Max, C0, C) :-
+    count_visible_plain(T, Max, C0, C).
+
+visible_check_left(Row, Clue) :-
+    count_visible_plain(Row, Count),
+    Count =:= Clue.
+
+visible_check_right(Row, Clue) :-
+    reverse(Row, Rev),
+    count_visible_plain(Rev, Count),
+    Count =:= Clue.
+
+% -------------------------
+% Estrutura de linha: agora com assinatura row_structure(Max, Row)
+% Cada linha tem comprimento Max+1, domínio 0..Max, todos distintos e exatamente 1 zero
+% -------------------------
+row_structure(Max, Row) :-
+    length(Row, Len),
+    Len is Max + 1,
+    Row ins 0..Max,
+    all_distinct(Row),
+    % exatamente um parque (0)
+    count_zeros(Row, 0, CountZ),
+    CountZ #= 1.
+
+% conta zeros com CLP(FD)
+count_zeros([], _, 0).
+count_zeros([X|Xs], V, C) :-
+    X #= V #<==> B,
+    count_zeros(Xs, V, Crest),
+    C #= Crest + B.
+
+% -------------------------
+% Pré-poda leve: aplicamos pistas de linhas antes do labeling
+% -------------------------
+visible_row_pre(Row, LeftClue, RightClue) :-
+    ( nonvar(LeftClue) -> visible_left_fd(Row, LeftClue) ; true ),
+    ( nonvar(RightClue) -> visible_right_fd(Row, RightClue) ; true ).
+
+visible_left_fd(Row, Clue) :-
+    foldl(update_fd, Row, (0, 0), (_, Count)),
+    Count #= Clue.
+
+visible_right_fd(Row, Clue) :-
+    reverse(Row, Rev),
+    visible_left_fd(Rev, Clue).
+
+update_fd(H, (Max0, Count0), (Max, Count)) :-
+    Max #= max(Max0, H),
+    B #<==> (H #> Max0),
+    Count #= Count0 + B.
+
+% -------------------------
+% Puzzle principal
+% -------------------------
+solve(Grid) :-
+    N = 6,
+    Max is N - 1,
+    length(Grid, N),
+    maplist(same_length(Grid), Grid),
+
+    % domínio e linhas estruturadas (agora row_structure/2 com ordem correta)
+    maplist(row_structure(Max), Grid),
+
+    % colunas todas distintas (cada número 0..Max aparece exatamente uma vez por coluna)
+    transpose(Grid, Columns),
+    maplist(all_distinct, Columns),
+
+    % pistas
+    Left   = [4,3,3,3,1,2],
+    Right  = [2,2,2,1,2,2],
+    Top    = [3,3,1,2,1,3],
+    Bottom = [2,1,4,3,5,3],
+
+    % pré-poda leve: aplicar pistas de linhas antes do labeling
+    maplist(visible_row_pre, Grid, Left, Right),
+
+    % flatten e labeling com heurísticas leves (completas)
+    append(Grid, Vars),
+    Vars ins 0..Max,
+    labeling([ff, bisect], Vars),
+
+    % checar pistas das colunas após labeling
+    transpose(Grid, Cols),
+    maplist(visible_check_left, Cols, Top),
+    maplist(visible_check_right, Cols, Bottom).
+
+% -------------------------
+% Impressão
+% -------------------------
+print_cell(0) :- write('c').
+print_cell(X) :- write(X).
+
+print_cells([]).
+print_cells([Last]) :- !, print_cell(Last).
+print_cells([H|T]) :-
+    print_cell(H),
+    write(','),
+    print_cells(T).
+
+print_row(Row) :-
+    write('['),
+    print_cells(Row),
+    writeln(']').
+
+print_grid([]).
+print_grid([R|Rs]) :-
+    print_row(R),
+    print_grid(Rs).
+
+% -------------------------
+% Ponto de entrada automático
+% -------------------------
+:- initialization(main).
+
+main :-
+    ( solve(Grid) ->
+        writeln('--- Solução encontrada ---'),
+        print_grid(Grid)
+    ; writeln('Nenhuma solução encontrada.')
+    ),
+    halt.
