@@ -1,0 +1,122 @@
+/*
+Estratégia usada:
+Caso1 -	Se tiver 3 torres, tira todas as pedras da torre com mais pedras.
+Caso2 -	Se tiver 2 torres e as duas tem mais de uma pedra, tira uma pedra da torre com mais pedras.
+Caso3 -	Se tiver 2 torres e uma delas tem mais de uma pedra, deixa a torre que tem mais de uma pedra com uma pedra só.
+Caso4 -	Se tiver apenas uma torre e ela tiver mais de uma pedra, deixa ela com uma pedra só.
+Caso5 - Em todas as outras possibilidades o agente faz uma jogada válida aleatória.
+*/
+
+//// CRENÇAS INICIAIS
+eu("lozf").
+
+//// PERCEPÇÕES
++start.
+
++towers(N) <-
+    total_torres(N).
+
++tower(T,S) <-
+    -pedra(T,_);
+    pedra(T,S).
+
++round(_,Ag) : eu(Ag) <- !decidir_jogada.
+
+//// REGRAS AUXILIARES
+
+torre_com_pedra(T,S) :-
+    pedra(T,S) & S > 0.
+
+qtd_torres_nao_vazias(N) :-
+    findall(T, torre_com_pedra(T,_), L),
+    .length(L, N).
+
+maior_torre(Tmax, Smax) :-
+    findall(T-S, torre_com_pedra(T,S), Pairs),
+    findall(Sval, (member(T0-Sval, Pairs)), Ss),
+    .max(Ss, Smax),
+    member(Tmax-Smax, Pairs).
+
+duas_maiores_que_um :-
+    findall(S, torre_com_pedra(_,S), L),
+    .length(L, Len),
+    Len == 2,
+    L = [S1, S2],
+    S1 > 1 & S2 > 1.
+
+uma_maior_que_um(T,S) :-
+    findall(T0-S0, (torre_com_pedra(T0,S0) & S0 > 1), L),
+    L = [T-S].
+
+unica_torre(T,S) :-
+    findall(T0-S0, torre_com_pedra(T0,S0), L),
+    L = [T-S].
+
+//// PLANOS
+
+% Caso1
+!decidir_jogada :
+    qtd_torres_nao_vazias(N) & N == 3
+<-
+    !coletar_informacoes;
+    maior_torre(Tmax, Smax);
+    T = Tmax;
+    S = Smax;
+    !validar(T,S);
+    play(T,S).
+
+% Caso2
+!decidir_jogada :
+    qtd_torres_nao_vazias(N) & N == 2 & duas_maiores_que_um
+<-
+    !coletar_informacoes;
+    maior_torre(Tmax,_);
+    T = Tmax;
+    S = 1;
+    !validar(T,S);
+    play(T,S).
+
+% Caso3
+!decidir_jogada :
+    qtd_torres_nao_vazias(N) & N == 2 & uma_maior_que_um(T0,S0)
+<-
+    !coletar_informacoes;
+    T = T0;
+    S0minus1 is S0 - 1;
+    S = S0minus1;
+    !validar(T,S);
+    play(T,S).
+
+% Caso4
+!decidir_jogada :
+    qtd_torres_nao_vazias(N) & N == 1 & unica_torre(T0,S0) & S0 > 1
+<-
+    !coletar_informacoes;
+    T = T0;
+    S0minus1 is S0 - 1;
+    S = S0minus1;
+    !validar(T,S);
+    play(T,S).
+
+% Caso5
+!decidir_jogada :
+    true
+<-
+    !coletar_informacoes;
+    findall(T-S, torre_com_pedra(T,S), Lista);
+    .random(Lista, Elem);
+    Elem = T-S;
+    .random(1, S, Qty);
+    !validar(T,Qty);
+    play(T,Qty).
+
+!coletar_informacoes <-
+    findall(T-S, pedra(T,S), Lista),
+    .print("Torres:", Lista).
+
+!validar(T,S) :
+    total_torres(N) &
+    T > 0 & T =< N &
+    pedra(T,P) & S > 0 & S =< P
+<-
+    true.
